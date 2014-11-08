@@ -248,6 +248,61 @@
 }
  */
 
+- (void) findSamples:(CDVInvokedUrlCommand*)command {
+  NSLocale *enUSPOSIXLocale = [[NSLocale alloc] initWithLocaleIdentifier:@"en_US_POSIX"];
+  NSDateFormatter *dateFormatter = [[NSDateFormatter alloc] init];
+  [dateFormatter setLocale:enUSPOSIXLocale];
+  [dateFormatter setDateFormat:@"yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'SSS'Z'"];
+  [dateFormatter setTimeZone:[NSTimeZone timeZoneForSecondsFromGMT:0]];
+
+  NSMutableDictionary *args = [command.arguments objectAtIndex:0];
+  NSString *startDateStr = [args objectForKey:@"startDate"];
+  NSString *endDateStr = [args objectForKey:@"endDate"];
+
+  NSDate *startDate = [dateFormatter dateFromString:startDateStr];
+  NSDate *endDate = [dateFormatter dateFromString:endDateStr];
+  NSPredicate *datePredicate = [HKQuery predicateForSamplesWithStartDate:startDate endDate:endDate options:HKQueryOptionNone];
+
+  NSArray *quantityTypes = @[HKQuantityTypeIdentifierStepCount, HKQuantityTypeIdentifierDistanceCycling, HKQuantityTypeIdentifierDistanceWalkingRunning];
+  __block NSMutableArray *finalResults = [[NSMutableArray alloc] init];
+  __block NSUInteger inflight = quantityTypes.count;
+
+  void (^handleResults)(HKSampleQuery*, NSArray*, NSError*) = ^(HKSampleQuery *query, NSArray *results, NSError *error) {
+    if (error) {
+      dispatch_sync(dispatch_get_main_queue(), ^{
+        CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:error.localizedDescription];
+        [self.commandDelegate sendPluginResult:result callbackId:command.callbackId];
+      });
+    } else {
+      for (HKQuantitySample *sample in results) {
+        HKUnit *unit = [HKUnit meterUnit];
+        NSString *metric = @"distance";
+        if (![sample.quantityType isCompatibleWithUnit:unit]) {
+          unit = [HKUnit countUnit];
+          metric = @"steps";
+        }
+        NSMutableDictionary *entry = [[NSMutableDictionary alloc] initWithObjectsAndKeys:
+                                      [NSNumber numberWithDouble:[sample.quantity doubleValueForUnit:unit]], metric,
+                                      [dateFormatter stringFromDate:sample.startDate], @"startDate",
+                                      [dateFormatter stringFromDate:sample.endDate], @"endDate",
+                                      nil];
+        [finalResults addObject:entry];
+      }
+    }
+    if (--inflight == 0) {
+      dispatch_sync(dispatch_get_main_queue(), ^{
+        CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:finalResults];
+        [self.commandDelegate sendPluginResult:result callbackId:command.callbackId];
+      });
+    }
+  };
+  for (NSString *quantityType in quantityTypes) {
+    HKQuantityType *sampleType = [HKQuantityType quantityTypeForIdentifier:quantityType];
+    HKSampleQuery *query = [[HKSampleQuery alloc] initWithSampleType:sampleType predicate:datePredicate limit:HKObjectQueryNoLimit sortDescriptors:nil resultsHandler:handleResults];
+    [self.healthStore executeQuery:query];
+  }
+}
+
 - (void) saveWeight:(CDVInvokedUrlCommand*)command {
   NSMutableDictionary *args = [command.arguments objectAtIndex:0];
   NSString *unit = [args objectForKey:@"unit"];

@@ -20,4 +20,6 @@
 - (void) saveWorkout:(CDVInvokedUrlCommand*)command;
 - (void) findWorkouts:(CDVInvokedUrlCommand*)command;
 
+- (void) findSamples:(CDVInvokedUrlCommand*)command;
+
 @end

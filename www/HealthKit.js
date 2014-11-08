@@ -68,6 +68,10 @@ HealthKit.prototype.saveWorkout = function (options, successCallback, errorCallb
   cordova.exec(successCallback, errorCallback, "HealthKit", "saveWorkout", [options]);
 };
 
+HealthKit.prototype.findSamples = function (options, successCallback, errorCallback) {
+  cordova.exec(successCallback, errorCallback, "HealthKit", "findSamples", [options]);
+};
+
 HealthKit.install = function () {
   if (!window.plugins) {
     window.plugins = {};
